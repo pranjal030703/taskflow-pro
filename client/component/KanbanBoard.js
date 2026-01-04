@@ -6,7 +6,7 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { useRouter } from 'next/navigation';
 
 // Connect to socket (we will authenticate socket later, for now it's public)
-const socket = io('http://localhost:5000');
+const socket = io('https://taskflow-api-77yp.onrender.com/');
 
 export default function KanbanBoard() {
   const [tasks, setTasks] = useState([]);
@@ -28,7 +28,7 @@ export default function KanbanBoard() {
     }
 
     // 2. Fetch Tasks (WITH TOKEN WRISTBAND)
-    axios.get('http://localhost:5000/api/tasks', {
+    axios.get('https://taskflow-api-77yp.onrender.com/api/tasks', {
         headers: { token: token }
     }).then((res) => {
       setTasks(res.data);
@@ -57,7 +57,7 @@ export default function KanbanBoard() {
       const token = localStorage.getItem("token");
       
       // ✅ FIX: Sending the Token here!
-      await axios.post('http://localhost:5000/api/tasks', {
+      await axios.post('https://taskflow-api-77yp.onrender.com/api/tasks', {
         title: newTaskTitle,
         description: "Added via Frontend",
         status: "TODO",
@@ -78,7 +78,7 @@ export default function KanbanBoard() {
     setSummary("");
     try {
       // (Optional) We can protect this route too if we want
-      const res = await axios.post('http://localhost:5000/api/ai-summary');
+      const res = await axios.post('https://taskflow-api-77yp.onrender.com/api/ai-summary');
       setSummary(res.data.summary);
     } catch (err) {
       console.error("AI Error:", err);
@@ -105,7 +105,7 @@ export default function KanbanBoard() {
       const token = localStorage.getItem("token");
 
       // ✅ FIX: Sending the Token here too!
-      await axios.put(`http://localhost:5000/api/tasks/${draggedTaskId}`, {
+      await axios.put(`https://taskflow-api-77yp.onrender.com/api/tasks/${draggedTaskId}`, {
         status: newStatus
       }, {
         headers: { token: token } // <--- The important part

@@ -12,7 +12,7 @@ export default function Register() {
     e.preventDefault();
     try {
       // 1. Send data to backend
-      const res = await axios.post("http://localhost:5000/auth/register", formData);
+      const res = await axios.post("https://taskflow-api-77yp.onrender.com/auth/register", formData);
       
       // 2. Save the "wristband" (token)
       localStorage.setItem("token", res.data.token);
