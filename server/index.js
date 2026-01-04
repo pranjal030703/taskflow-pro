@@ -115,16 +115,16 @@ app.put('/api/tasks/:id', async (req, res) => {
     }
 });
 // --- TEMPORARY SETUP ROUTE (DELETE AFTER RUNNING) ---
-// --- FINAL DATABASE SETUP ROUTE ---
+// --- COMPLETE DATABASE SETUP (Includes Priority & Assignee) ---
 app.get('/setup-db', async (req, res) => {
   try {
     const pool = require('./db');
     
-    // 1. DELETE OLD TABLES
+    // 1. Reset Tables (Deletes old data to start fresh)
     await pool.query('DROP TABLE IF EXISTS tasks');
     await pool.query('DROP TABLE IF EXISTS users');
 
-    // 2. CREATE USERS TABLE (Matched to your Code!)
+    // 2. Create Users
     await pool.query(`
       CREATE TABLE users (
         id SERIAL PRIMARY KEY,
@@ -134,24 +134,26 @@ app.get('/setup-db', async (req, res) => {
       );
     `);
 
-    // 3. CREATE TASKS TABLE
+    // 3. Create Tasks (WITH ALL REQUIRED COLUMNS)
     await pool.query(`
       CREATE TABLE tasks (
         id SERIAL PRIMARY KEY,
         title VARCHAR(255) NOT NULL,
         description TEXT,
         status VARCHAR(50) DEFAULT 'todo',
+        priority VARCHAR(50) DEFAULT 'medium',  
+        position INTEGER DEFAULT 0,
+        assignee_id INTEGER,                   
         user_id INTEGER REFERENCES users(id)
       );
     `);
 
-    res.send("Database Fixed! Created tables with 'username' and 'password_hash'. 🚀");
+    res.send("Database Upgraded! Added 'priority' and 'assignee_id'. 🚀");
   } catch (err) {
     console.error(err);
     res.status(500).send("Error setup: " + err.message);
   }
 });
-// ----------------------------------------------------
 // ----------------------------------------------------
 // 3. START SERVER
 const PORT = process.env.PORT || 5000;
