@@ -7,9 +7,17 @@ const authRoutes = require('./routes/auth');
 const app = express();
 const server = http.createServer(app);
 const authorize = require('./middleware/authorize');
-// Setup Socket.IO (for Realtime updates later)
+const { Server } = require("socket.io");
+
+// ... your other imports ...
+
 const io = new Server(server, {
-    cors: { origin: "http://localhost:3000", methods: ["GET", "POST", "PUT", "DELETE"] }
+  cors: {
+    // allow your Vercel frontend
+    origin: ["http://localhost:3000", "https://taskflow-pro-sable.vercel.app"],
+    methods: ["GET", "POST"],
+    credentials: true
+  }
 });
 
 app.use(cors({
