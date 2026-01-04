@@ -1,209 +1,214 @@
-"use client";
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
 import axios from 'axios';
 import io from 'socket.io-client';
-import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { useRouter } from 'next/navigation';
 
-// Connect to socket (we will authenticate socket later, for now it's public)
-// Add specific transports to prevent connection errors
-const socket = io('https://taskflow-api-77yp.onrender.com', {
-  transports: ['websocket', 'polling'], 
+// --- CONFIGURATION ---
+const API_URL = 'https://taskflow-api-77yp.onrender.com'; 
+const socket = io(API_URL, {
+  transports: ['websocket', 'polling'],
   withCredentials: true
 });
 
-export default function KanbanBoard() {
+const KanbanBoard = () => {
   const [tasks, setTasks] = useState([]);
-  const [newTaskTitle, setNewTaskTitle] = useState("");
-  const [isClient, setIsClient] = useState(false);
-  const [summary, setSummary] = useState("");
-  const [loadingAI, setLoadingAI] = useState(false);
-  
-  const router = useRouter();
+  const [newTask, setNewTask] = useState('');
+  const [loading, setLoading] = useState(true);
 
+  // 1. Fetch Tasks on Load
   useEffect(() => {
-    setIsClient(true);
+    fetchTasks();
 
-    // 1. Check for Login Token
-    const token = localStorage.getItem("token");
-    if (!token) {
-        router.push("/login"); // Kick user out if no token
-        return;
-    }
-
-    // 2. Fetch Tasks (WITH TOKEN WRISTBAND)
-    axios.get('https://taskflow-api-77yp.onrender.com/api/tasks', {
-        headers: { token: token }
-    }).then((res) => {
-      setTasks(res.data);
-    }).catch((err) => {
-      console.error("Access Denied:", err);
-      if (err.response && (err.response.status === 403 || err.response.status === 401)) {
-          router.push("/login");
-      }
+    // Real-time listener: When server says "tasksUpdated", reload list
+    socket.on('tasksUpdated', (updatedTasks) => {
+      console.log("Socket received update:", updatedTasks);
+      setTasks(updatedTasks);
     });
 
-    // 3. Realtime Updates
-    socket.on("task_updated", (data) => {
-      if (data.type === "CREATE") {
-        setTasks((prev) => [...prev, data.task]);
-      } else if (data.type === "UPDATE") {
-        setTasks((prev) => prev.map(t => t.id === data.task.id ? data.task : t));
-      }
-    });
-
-    return () => socket.off("task_updated");
+    return () => socket.off('tasksUpdated');
   }, []);
 
-  const createTask = async () => {
-    if (!newTaskTitle) return;
+  const fetchTasks = async () => {
     try {
-      const token = localStorage.getItem("token");
-      
-      // ✅ FIX: Sending the Token here!
-      await axios.post('https://taskflow-api-77yp.onrender.com/api/tasks', {
-        title: newTaskTitle,
-        description: "Added via Frontend",
-        status: "TODO",
-        priority: "MEDIUM"
-      }, {
-        headers: { token: token } // <--- The important part
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`${API_URL}/tasks`, {
+        headers: { Authorization: token }
       });
-
-      setNewTaskTitle("");
-    } catch (err) {
-      console.error("Error creating task:", err);
-      alert("Failed to add task. Are you logged in?");
+      console.log("Fetched tasks:", response.data);
+      setTasks(response.data);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error fetching tasks:', error);
+      setLoading(false);
     }
   };
 
-  const generateSummary = async () => {
-    setLoadingAI(true);
-    setSummary("");
+  // 2. Add New Task
+  const addTask = async () => {
+    if (!newTask.trim()) return;
     try {
-      // (Optional) We can protect this route too if we want
-      const res = await axios.post('https://taskflow-api-77yp.onrender.com/api/ai-summary');
-      setSummary(res.data.summary);
-    } catch (err) {
-      console.error("AI Error:", err);
-      alert("Failed to generate summary");
+      const token = localStorage.getItem('token');
+      // Default status is 'todo'
+      await axios.post(`${API_URL}/tasks`, { 
+        title: newTask, 
+        status: 'todo',
+        priority: 'medium' 
+      }, {
+        headers: { Authorization: token }
+      });
+      setNewTask('');
+      // No need to manually fetchTasks() here because Socket.io will trigger it!
+    } catch (error) {
+      console.error('Error adding task:', error);
+      alert('Failed to add task. Are you logged in?');
     }
-    setLoadingAI(false);
   };
 
+  // 3. Handle Drag and Drop
   const onDragEnd = async (result) => {
-    const { destination, source, draggableId } = result;
-    if (!destination) return;
-    if (destination.droppableId === source.droppableId && destination.index === source.index) return;
+    if (!result.destination) return;
 
-    const draggedTaskId = parseInt(draggableId);
-    const newStatus = destination.droppableId;
+    const { source, destination, draggableId } = result;
 
-    // Optimistic Update
-    const updatedTasks = tasks.map((t) => 
-      t.id === draggedTaskId ? { ...t, status: newStatus } : t
-    );
+    // If dropped in the same place, do nothing
+    if (source.droppableId === destination.droppableId && source.index === destination.index) {
+      return;
+    }
+
+    // Optimistic Update (Update UI instantly before Server responds)
+    const updatedTasks = Array.from(tasks);
+    const [movedTask] = updatedTasks.splice(updatedTasks.findIndex(t => t.id.toString() === draggableId), 1);
+    
+    // Update the task's status to the new column name
+    movedTask.status = destination.droppableId; 
+    updatedTasks.splice(destination.index, 0, movedTask);
+    
     setTasks(updatedTasks);
 
+    // Send update to Server
     try {
-      const token = localStorage.getItem("token");
-
-      // ✅ FIX: Sending the Token here too!
-      await axios.put(`https://taskflow-api-77yp.onrender.com/api/tasks/${draggedTaskId}`, {
-        status: newStatus
+      const token = localStorage.getItem('token');
+      await axios.put(`${API_URL}/tasks/${draggableId}`, {
+        status: destination.droppableId,
+        position: destination.index
       }, {
-        headers: { token: token } // <--- The important part
+        headers: { Authorization: token }
       });
-    } catch (err) {
-      console.error("Failed to move task:", err);
+    } catch (error) {
+      console.error("Error moving task:", error);
+      fetchTasks(); // Revert changes if server fails
     }
   };
 
-  const getTasksByStatus = (status) => tasks.filter(t => t.status === status);
+  // 4. Filter Tasks for Columns (Case Insensitive Fix)
+  const getTasksByStatus = (status) => {
+    return tasks.filter(task => 
+      task.status && task.status.toLowerCase() === status.toLowerCase()
+    );
+  };
 
-  if (!isClient) return null;
+  if (loading) return <div className="p-10 text-center">Loading Board...</div>;
 
   return (
-    <div className="p-10 bg-gray-100 min-h-screen text-black">
-      <h1 className="text-4xl font-bold mb-8 text-center text-blue-600">TaskFlow Pro</h1>
+    <div className="flex flex-col items-center min-h-screen bg-gray-50 p-8">
+      <h1 className="text-4xl font-bold text-blue-600 mb-8">TaskFlow Pro</h1>
       
-      {/* AI Summary Section */}
-      <div className="flex flex-col items-center mb-6">
-        <button 
-          onClick={generateSummary} 
-          disabled={loadingAI}
-          className={`px-6 py-2 rounded-lg font-bold text-white shadow-md transition ${loadingAI ? 'bg-gray-400 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700'}`}
-        >
-          {loadingAI ? "✨ AI is thinking..." : "✨ Generate Weekly Summary"}
-        </button>
-        {summary && (
-          <div className="mt-6 p-6 bg-white border-l-4 border-purple-500 rounded-r-lg shadow-md max-w-2xl w-full animate-fade-in">
-            <h3 className="font-bold text-purple-800 mb-2">🤖 AI Report:</h3>
-            <p className="whitespace-pre-line text-gray-700">{summary}</p>
-          </div>
-        )}
-      </div>
-
       {/* Input Section */}
-      <div className="flex justify-center mb-8 gap-4">
-        <input 
-          className="p-3 border rounded-lg w-1/3 shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-          value={newTaskTitle}
-          onChange={(e) => setNewTaskTitle(e.target.value)}
+      <div className="flex gap-4 mb-10 w-full max-w-lg">
+        <input
+          type="text"
+          className="flex-1 p-3 border rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
           placeholder="Enter a new task..."
+          value={newTask}
+          onChange={(e) => setNewTask(e.target.value)}
+          onKeyPress={(e) => e.key === 'Enter' && addTask()}
         />
         <button 
-          onClick={createTask} 
-          className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-6 py-3 rounded-lg transition shadow-md">
+          onClick={addTask}
+          className="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-700 transition"
+        >
           Add Task
         </button>
       </div>
 
-      {/* Kanban Board */}
+      {/* Board Columns */}
       <DragDropContext onDragEnd={onDragEnd}>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {['TODO', 'IN_PROGRESS', 'DONE'].map((status) => (
-            <Droppable key={status} droppableId={status}>
-              {(provided) => (
-                <div
-                  ref={provided.innerRef}
-                  {...provided.droppableProps}
-                  className="bg-white p-5 rounded-xl shadow-lg border border-gray-200 min-h-[400px]"
-                >
-                  <h2 className="font-bold text-xl mb-4 text-gray-700 border-b pb-2 tracking-wide">
-                    {status.replace('_', ' ')}
-                  </h2>
-                  <div className="space-y-3 min-h-[200px]">
-                    {getTasksByStatus(status).map((task, index) => (
-                      <Draggable key={task.id} draggableId={task.id.toString()} index={index}>
-                        {(provided) => (
-                          <div
-                            ref={provided.innerRef}
-                            {...provided.draggableProps}
-                            {...provided.dragHandleProps}
-                            className="bg-white p-4 rounded-lg border-l-4 border-blue-500 shadow-sm hover:shadow-md transition cursor-pointer"
-                            style={provided.draggableProps.style}
-                          >
-                            <h3 className="font-semibold text-lg">{task.title}</h3>
-                            <p className="text-gray-500 text-sm mt-1">{task.description}</p>
-                            <div className="mt-3 flex justify-between text-xs font-medium text-gray-400">
-                              <span>ID: #{task.id}</span>
-                              <span className={`px-2 py-1 rounded ${task.priority === 'HIGH' ? 'bg-red-100 text-red-600' : 'bg-gray-100'}`}>
-                                {task.priority}
-                              </span>
-                            </div>
-                          </div>
-                        )}
-                      </Draggable>
-                    ))}
-                    {provided.placeholder}
-                  </div>
-                </div>
-              )}
-            </Droppable>
-          ))}
+        <div className="flex flex-wrap justify-center gap-6 w-full max-w-6xl">
+          
+          {/* TODO Column */}
+          <Column 
+            title="TODO" 
+            id="todo" 
+            tasks={getTasksByStatus('todo')} 
+          />
+
+          {/* IN PROGRESS Column */}
+          <Column 
+            title="IN PROGRESS" 
+            id="in progress" // Must match DB value
+            tasks={getTasksByStatus('in progress')} 
+          />
+
+          {/* DONE Column */}
+          <Column 
+            title="DONE" 
+            id="done" 
+            tasks={getTasksByStatus('done')} 
+          />
+
         </div>
       </DragDropContext>
     </div>
   );
-}
+};
+
+// --- SUB-COMPONENT: Column (Renders the list) ---
+const Column = ({ title, id, tasks }) => {
+  return (
+    <div className="bg-white p-5 rounded-xl shadow-md w-80 min-h-[400px] flex flex-col">
+      <h2 className="text-xl font-bold text-gray-700 mb-4 border-b pb-2 uppercase tracking-wide">
+        {title}
+      </h2>
+      <Droppable droppableId={id}>
+        {(provided, snapshot) => (
+          <div
+            ref={provided.innerRef}
+            {...provided.droppableProps}
+            className={`flex-1 transition-colors rounded-lg p-2 ${
+              snapshot.isDraggingOver ? 'bg-blue-50' : ''
+            }`}
+          >
+            {tasks.map((task, index) => (
+              <Draggable key={task.id} draggableId={task.id.toString()} index={index}>
+                {(provided, snapshot) => (
+                  <div
+                    ref={provided.innerRef}
+                    {...provided.draggableProps}
+                    {...provided.dragHandleProps}
+                    className={`bg-gray-100 p-4 mb-3 rounded-lg shadow-sm hover:shadow-md transition ${
+                      snapshot.isDragging ? 'bg-blue-100 scale-105' : ''
+                    }`}
+                  >
+                    <p className="font-medium text-gray-800">{task.title}</p>
+                    {task.priority && (
+                      <span className={`text-xs px-2 py-1 rounded mt-2 inline-block ${
+                        task.priority === 'high' ? 'bg-red-200 text-red-800' : 
+                        task.priority === 'medium' ? 'bg-yellow-200 text-yellow-800' : 
+                        'bg-green-200 text-green-800'
+                      }`}>
+                        {task.priority}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </Draggable>
+            ))}
+            {provided.placeholder}
+          </div>
+        )}
+      </Droppable>
+    </div>
+  );
+};
+
+export default KanbanBoard;
