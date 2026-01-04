@@ -7,7 +7,7 @@ const authRoutes = require('./routes/auth');
 const app = express();
 const server = http.createServer(app);
 const authorize = require('./middleware/authorize');
-const { Server } = require("socket.io");
+
 
 // ... your other imports ...
 
