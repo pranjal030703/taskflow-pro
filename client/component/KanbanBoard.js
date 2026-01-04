@@ -6,7 +6,11 @@ import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { useRouter } from 'next/navigation';
 
 // Connect to socket (we will authenticate socket later, for now it's public)
-const socket = io('https://taskflow-api-77yp.onrender.com/');
+// Add specific transports to prevent connection errors
+const socket = io('https://taskflow-api-77yp.onrender.com', {
+  transports: ['websocket', 'polling'], 
+  withCredentials: true
+});
 
 export default function KanbanBoard() {
   const [tasks, setTasks] = useState([]);
