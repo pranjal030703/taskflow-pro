@@ -115,22 +115,22 @@ app.put('/api/tasks/:id', async (req, res) => {
     }
 });
 // --- TEMPORARY SETUP ROUTE (DELETE AFTER RUNNING) ---
-// --- UPDATED SETUP ROUTE (FIXES COLUMN NAME) ---
+// --- FINAL DATABASE SETUP ROUTE ---
 app.get('/setup-db', async (req, res) => {
   try {
     const pool = require('./db');
     
-    // 1. DELETE OLD TABLES (To fix the column name issue)
+    // 1. DELETE OLD TABLES
     await pool.query('DROP TABLE IF EXISTS tasks');
     await pool.query('DROP TABLE IF EXISTS users');
 
-    // 2. CREATE NEW USERS TABLE (With "username" instead of "name")
+    // 2. CREATE USERS TABLE (Matched to your Code!)
     await pool.query(`
       CREATE TABLE users (
         id SERIAL PRIMARY KEY,
-        username VARCHAR(255) NOT NULL, 
+        username VARCHAR(255) NOT NULL,
         email VARCHAR(255) UNIQUE NOT NULL,
-        password VARCHAR(255) NOT NULL
+        password_hash VARCHAR(255) NOT NULL
       );
     `);
 
@@ -145,7 +145,7 @@ app.get('/setup-db', async (req, res) => {
       );
     `);
 
-    res.send("Database Fixed! Old tables deleted, new tables created with 'username'. 🚀");
+    res.send("Database Fixed! Created tables with 'username' and 'password_hash'. 🚀");
   } catch (err) {
     console.error(err);
     res.status(500).send("Error setup: " + err.message);
