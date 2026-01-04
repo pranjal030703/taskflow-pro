@@ -114,7 +114,36 @@ app.put('/api/tasks/:id', async (req, res) => {
         res.status(500).send('Server Error');
     }
 });
-
+// --- TEMPORARY SETUP ROUTE (DELETE AFTER RUNNING) ---
+app.get('/setup-db', async (req, res) => {
+  try {
+    const pool = require('./db');
+    // Create Users Table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL
+      );
+    `);
+    // Create Tasks Table (Adding this too so you don't get errors later!)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS tasks (
+        id SERIAL PRIMARY KEY,
+        title VARCHAR(255) NOT NULL,
+        description TEXT,
+        status VARCHAR(50) DEFAULT 'todo',
+        user_id INTEGER REFERENCES users(id)
+      );
+    `);
+    res.send("Database Tables Created Successfully! 🚀");
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Error creating tables: " + err.message);
+  }
+});
+// ----------------------------------------------------
 // 3. START SERVER
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
