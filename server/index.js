@@ -13,9 +13,9 @@ const io = new Server(server, {
 });
 
 app.use(cors({
-    origin: "http://localhost:3000", // Allow your frontend
-    methods: ["GET", "POST", "PUT", "DELETE"], // Allow these actions
-    allowedHeaders: ["Content-Type", "token"] // <--- IMPORTANT: Allow the 'token' header
+    origin: ["http://localhost:3000", "https://taskflow-pro-sable.vercel.app"],
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true
 }));
 app.use(express.json());
 // Auth Middleware
