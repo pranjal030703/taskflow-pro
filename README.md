@@ -36,3 +36,26 @@ Want to test it out quickly? Use these guest credentials:
    ```bash
    git clone [https://github.com/pranjal030703/taskflow-pro.git](https://github.com/pranjal030703/taskflow-pro.git)
    cd taskflow-pro
+2. **Install Dependencies**
+
+```bash
+
+cd client && npm install
+cd ../server && npm install
+
+```
+3. **Setup Environment Variables** Create a .env file in the server folder:
+
+Code snippet
+
+DATABASE_URL=your_postgres_url_here
+
+4. **Run the App**
+
+Terminal 1 (Backend): cd server && node index.js
+
+Terminal 2 (Frontend): cd client && npm run dev
+
+
+
+Built with ❤️ by Pranjal
