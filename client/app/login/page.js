@@ -11,7 +11,7 @@ export default function Login() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await axios.post("https://taskflow-api-77yp.onrender.com/auth/login", formData);
+      const res = await axios.post("https://taskflow-api-77yp.onrender.com/login", formData);
       
       // Save Token & User Info
       localStorage.setItem("token", res.data.token);
