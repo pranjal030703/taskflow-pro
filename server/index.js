@@ -136,6 +136,21 @@ app.put("/tasks/:id", async (req, res) => {
         res.status(500).send("Server Error");
     }
 });
+// DELETE TASK
+app.delete("/tasks/:id", async (req, res) => {
+    try {
+        const { id } = req.params;
+        await pool.query("DELETE FROM tasks WHERE id = $1", [id]);
+        
+        // Notify everyone to update their board
+        io.emit("tasksUpdated", (await pool.query("SELECT * FROM tasks ORDER BY position ASC")).rows);
+        
+        res.json("Task deleted!");
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send("Server Error");
+    }
+});
 
 // --- 4. START SERVER ---
 const PORT = process.env.PORT || 10000;
