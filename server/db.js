@@ -1,21 +1,16 @@
-const { Pool } = require("pg");
+const Pool = require("pg").Pool;
 require("dotenv").config();
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false, // <--- This is the magic line that fixes the error!
-  },
-});
+const isProduction = process.env.NODE_ENV === "production";
 
-module.exports = pool;
-// Test the connection
-pool.connect((err, client, release) => {
-    if (err) {
-        return console.error('Error acquiring client', err.stack);
-    }
-    console.log('✅ Connected to PostgreSQL Database successfully!');
-    release();
+// Configuration for Local (No SSL) vs Production (SSL Required)
+const connectionString = process.env.DATABASE_URL;
+
+const pool = new Pool({
+  connectionString: connectionString,
+  ssl: isProduction
+    ? { rejectUnauthorized: false } // Render needs this
+    : false // Localhost does NOT need this
 });
 
 module.exports = pool;
