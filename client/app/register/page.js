@@ -1,63 +1,74 @@
 "use client";
-import { useState } from "react";
-import axios from "axios";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { useState } from 'react';
+import axios from 'axios';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+
+// 👇 THIS IS THE FIX: POINT TO RENDER, NOT VERCEL
+const API_URL = 'https://taskflow-api-77yp.onrender.com';
 
 export default function Register() {
-  const [formData, setFormData] = useState({ username: "", email: "", password: "" });
+  const [formData, setFormData] = useState({ username: '', email: '', password: '' });
+  const [error, setError] = useState('');
   const router = useRouter();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError(''); // Clear past errors
+    
     try {
-      // 1. Send data to backend
-      const res = await await axios.post('https://taskflow-api-77yp.onrender.com/register', {
-       username, 
-       email, 
-       password 
-    });
+      // Use the API_URL here
+      await axios.post(`${API_URL}/register`, {
+        username: formData.username,
+        email: formData.email,
+        password: formData.password
+      });
       
-      // 2. Save the "wristband" (token)
-      localStorage.setItem("token", res.data.token);
-      
-      // 3. Go to the board
-      router.push("/");
+      alert('Registration Successful! Please Login.');
+      router.push('/login');
     } catch (err) {
-      alert(err.response?.data || "Registration failed");
+      console.error("Registration Error:", err);
+      // improved error handling
+      setError(err.response?.data?.error || 'Registration failed. Try a different email.');
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
-      <form onSubmit={handleSubmit} className="bg-gray-800 p-8 rounded-lg shadow-lg w-96">
-        <h1 className="text-3xl font-bold mb-6 text-center text-blue-500">Sign Up</h1>
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white">
+      <div className="bg-gray-800 p-8 rounded-lg shadow-lg w-96">
+        <h2 className="text-3xl font-bold mb-6 text-center text-blue-400">Sign Up</h2>
         
-        <input 
-          className="w-full p-3 mb-4 bg-gray-700 rounded border border-gray-600 focus:outline-none focus:border-blue-500"
-          placeholder="Username" 
-          onChange={(e) => setFormData({...formData, username: e.target.value})} 
-        />
-        <input 
-          className="w-full p-3 mb-4 bg-gray-700 rounded border border-gray-600 focus:outline-none focus:border-blue-500"
-          type="email" 
-          placeholder="Email" 
-          onChange={(e) => setFormData({...formData, email: e.target.value})} 
-        />
-        <input 
-          className="w-full p-3 mb-6 bg-gray-700 rounded border border-gray-600 focus:outline-none focus:border-blue-500"
-          type="password" 
-          placeholder="Password" 
-          onChange={(e) => setFormData({...formData, password: e.target.value})} 
-        />
+        {error && <p className="text-red-500 text-center mb-4">{error}</p>}
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <input 
+            className="p-3 rounded bg-gray-700 border border-gray-600 focus:outline-none focus:border-blue-500"
+            placeholder="Username" 
+            value={formData.username}
+            onChange={e => setFormData({...formData, username: e.target.value})}
+          />
+          <input 
+            className="p-3 rounded bg-gray-700 border border-gray-600 focus:outline-none focus:border-blue-500"
+            placeholder="Email" 
+            value={formData.email}
+            onChange={e => setFormData({...formData, email: e.target.value})}
+          />
+          <input 
+            className="p-3 rounded bg-gray-700 border border-gray-600 focus:outline-none focus:border-blue-500"
+            type="password" 
+            placeholder="Password" 
+            value={formData.password}
+            onChange={e => setFormData({...formData, password: e.target.value})}
+          />
+          <button className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded transition">
+            Register
+          </button>
+        </form>
         
-        <button className="w-full bg-blue-600 hover:bg-blue-700 p-3 rounded font-bold transition">
-          Register
-        </button>
         <p className="mt-4 text-center text-gray-400">
           Already have an account? <Link href="/login" className="text-blue-400 hover:underline">Login</Link>
         </p>
-      </form>
+      </div>
     </div>
   );
 }

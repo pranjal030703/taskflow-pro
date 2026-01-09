@@ -1,55 +1,63 @@
 "use client";
-import { useState } from "react";
-import axios from "axios";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { useState } from 'react';
+import axios from 'axios';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+
+// 👇 THE FIX
+const API_URL = 'https://taskflow-api-77yp.onrender.com';
 
 export default function Login() {
-  const [formData, setFormData] = useState({ email: "", password: "" });
+  const [formData, setFormData] = useState({ email: '', password: '' });
+  const [error, setError] = useState('');
   const router = useRouter();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await axios.post('https://taskflow-api-77yp.onrender.com/login', { 
-        email, 
-       password 
-    });
+      const res = await axios.post(`${API_URL}/login`, formData);
       
-      // Save Token & User Info
-      localStorage.setItem("token", res.data.token);
+      // Save the token!
+      localStorage.setItem('token', res.data.token);
       
-      router.push("/"); // Go to Board
+      alert('Login Successful! 🚀');
+      router.push('/board'); // Go to the Kanban Board
     } catch (err) {
-      alert("Invalid Email or Password");
+      console.error("Login Error:", err);
+      setError('Invalid email or password');
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-900 text-white">
-      <form onSubmit={handleSubmit} className="bg-gray-800 p-8 rounded-lg shadow-lg w-96">
-        <h1 className="text-3xl font-bold mb-6 text-center text-green-500">Login</h1>
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white">
+      <div className="bg-gray-800 p-8 rounded-lg shadow-lg w-96">
+        <h2 className="text-3xl font-bold mb-6 text-center text-blue-400">Login</h2>
         
-        <input 
-          className="w-full p-3 mb-4 bg-gray-700 rounded border border-gray-600 focus:outline-none focus:border-green-500"
-          type="email" 
-          placeholder="Email" 
-          onChange={(e) => setFormData({...formData, email: e.target.value})} 
-        />
-        <input 
-          className="w-full p-3 mb-6 bg-gray-700 rounded border border-gray-600 focus:outline-none focus:border-green-500"
-          type="password" 
-          placeholder="Password" 
-          onChange={(e) => setFormData({...formData, password: e.target.value})} 
-        />
-        
-        <button className="w-full bg-green-600 hover:bg-green-700 p-3 rounded font-bold transition">
-          Login
-        </button>
+        {error && <p className="text-red-500 text-center mb-4">{error}</p>}
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <input 
+            className="p-3 rounded bg-gray-700 border border-gray-600 focus:outline-none focus:border-blue-500"
+            placeholder="Email" 
+            value={formData.email}
+            onChange={e => setFormData({...formData, email: e.target.value})}
+          />
+          <input 
+            className="p-3 rounded bg-gray-700 border border-gray-600 focus:outline-none focus:border-blue-500"
+            type="password" 
+            placeholder="Password" 
+            value={formData.password}
+            onChange={e => setFormData({...formData, password: e.target.value})}
+          />
+          <button className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded transition">
+            Login
+          </button>
+        </form>
+
         <p className="mt-4 text-center text-gray-400">
-          New here? <Link href="/register" className="text-green-400 hover:underline">Sign Up</Link>
+          Need an account? <Link href="/register" className="text-blue-400 hover:underline">Sign Up</Link>
         </p>
-      </form>
+      </div>
     </div>
   );
 }
