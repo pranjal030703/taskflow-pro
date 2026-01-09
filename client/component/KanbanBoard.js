@@ -18,20 +18,40 @@ const KanbanBoard = () => {
   // 1. Fetch Tasks & Listen for Real-Time Updates
   useEffect(() => {
     fetchTasks();
-    socket.on('tasksUpdated', (updatedTasks) => {
-      setTasks(updatedTasks);
+    
+    // Listen for updates (and filter them if needed)
+    socket.on('tasksUpdated', (updatedTask) => {
+        // Simple strategy: Just refresh list to be safe and accurate
+        fetchTasks();
     });
-    return () => socket.off('tasksUpdated');
+
+    socket.on('taskDeleted', (deletedId) => {
+        setTasks(prev => prev.filter(t => t.id !== deletedId));
+    });
+
+    return () => {
+        socket.off('tasksUpdated');
+        socket.off('taskDeleted');
+    };
   }, []);
 
   const fetchTasks = async () => {
     try {
-      const response = await axios.get(`${API_URL}/tasks`);
+      // 👇 SECURITY UPGRADE: Get Token
+      const token = localStorage.getItem('token');
+      
+      const response = await axios.get(`${API_URL}/tasks`, {
+        headers: { Authorization: token } // 👇 Send Token
+      });
       setTasks(response.data);
       setLoading(false);
     } catch (error) {
       console.error('Error fetching tasks:', error);
       setLoading(false);
+      if (error.response && error.response.status === 403) {
+          alert("Session expired. Please login again.");
+          window.location.href = "/login";
+      }
     }
   };
 
@@ -39,12 +59,16 @@ const KanbanBoard = () => {
   const addTask = async () => {
     if (!newTask.trim()) return;
     try {
+      const token = localStorage.getItem('token');
       await axios.post(`${API_URL}/tasks`, { 
         title: newTask, 
         status: 'todo',
         priority: 'medium' 
+      }, {
+        headers: { Authorization: token } // 👇 Send Token
       });
       setNewTask('');
+      fetchTasks();
     } catch (error) {
       console.error('Error adding task:', error);
     }
@@ -54,9 +78,15 @@ const KanbanBoard = () => {
   const deleteTask = async (id) => {
     if (!window.confirm("Are you sure you want to delete this task?")) return;
     try {
-      await axios.delete(`${API_URL}/tasks/${id}`);
+      const token = localStorage.getItem('token');
+      await axios.delete(`${API_URL}/tasks/${id}`, {
+        headers: { Authorization: token } // 👇 Send Token
+      });
+      // Optimistic update
+      setTasks(tasks.filter(t => t.id !== id));
     } catch (error) {
       console.error('Error deleting task:', error);
+      alert("Could not delete task.");
     }
   };
 
@@ -68,6 +98,8 @@ const KanbanBoard = () => {
     // Optimistic Update
     const updatedTasks = Array.from(tasks);
     const movedTaskIndex = updatedTasks.findIndex(t => t.id.toString() === draggableId);
+    if (movedTaskIndex === -1) return; // Safety check
+
     const [movedTask] = updatedTasks.splice(movedTaskIndex, 1);
     movedTask.status = destination.droppableId;
     updatedTasks.splice(destination.index, 0, movedTask);
@@ -75,11 +107,15 @@ const KanbanBoard = () => {
 
     // Send to Server
     try {
+      const token = localStorage.getItem('token');
       await axios.put(`${API_URL}/tasks/${draggableId}`, {
         status: destination.droppableId,
         position: destination.index
+      }, {
+        headers: { Authorization: token } // 👇 Send Token
       });
     } catch (error) {
+      console.error("Move failed:", error);
       fetchTasks(); // Revert on error
     }
   };
@@ -88,13 +124,24 @@ const KanbanBoard = () => {
     return tasks.filter(task => task.status && task.status.toLowerCase() === status.toLowerCase());
   };
 
-  if (loading) return <div className="p-10 text-center text-gray-500">Loading Board...</div>;
+  if (loading) return <div className="p-10 text-center text-gray-500">Loading your private board...</div>;
 
   return (
     <div className="flex flex-col items-center min-h-screen bg-gray-50 p-4 md:p-8">
-      <h1 className="text-3xl md:text-4xl font-bold text-blue-600 mb-6 md:mb-8">TaskFlow Pro</h1>
+      <div className="flex justify-between w-full max-w-6xl items-center mb-6">
+        <h1 className="text-3xl md:text-4xl font-bold text-blue-600">TaskFlow Pro</h1>
+        <button 
+            onClick={() => {
+                localStorage.removeItem('token');
+                window.location.href = '/login';
+            }}
+            className="text-sm text-red-500 hover:underline"
+        >
+            Logout
+        </button>
+      </div>
       
-      {/* Input Section - Fixed Text Color */}
+      {/* Input Section */}
       <div className="flex flex-col sm:flex-row gap-3 mb-8 w-full max-w-lg">
         <input
           type="text"
@@ -112,7 +159,7 @@ const KanbanBoard = () => {
         </button>
       </div>
 
-      {/* Board Columns - Stack on Mobile, Row on Desktop */}
+      {/* Board Columns */}
       <DragDropContext onDragEnd={onDragEnd}>
         <div className="flex flex-col md:flex-row justify-center items-start gap-6 w-full max-w-6xl">
           
@@ -183,7 +230,6 @@ const Column = ({ title, id, tasks, onDelete }) => {
                       )}
                     </div>
                     
-                    {/* Delete Button (Trash Icon) */}
                     <button 
                       onClick={() => onDelete(task.id)}
                       className="text-gray-400 hover:text-red-600 transition p-1"

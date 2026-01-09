@@ -5,13 +5,12 @@ const cors = require("cors");
 const pool = require("./db"); 
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const authorize = require("./middleware/authorize"); // Import the Guard 🛡️
 
 const app = express();
 const server = http.createServer(app);
 
-// --- 1. CONFIGURATION ---
 app.use(cors({
-    // Allow your specific Vercel URL
     origin: ["http://localhost:3000", "https://taskflow-pro-sable.vercel.app"],
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true
@@ -26,72 +25,56 @@ const io = new Server(server, {
     }
 });
 
-// --- 2. AUTH ROUTES (THESE WERE MISSING!) ---
-
-// REGISTER
+// --- AUTH ROUTES ---
 app.post('/register', async (req, res) => {
   try {
     const { username, email, password } = req.body;
-    
-    // 1. Check if user exists
     const userCheck = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
-    if (userCheck.rows.length > 0) {
-      return res.status(401).json({ error: "User already exists!" });
-    }
+    if (userCheck.rows.length > 0) return res.status(401).json({ error: "User already exists!" });
 
-    // 2. Hash password (encrypt it)
     const salt = await bcrypt.genSalt(10);
     const bcryptPassword = await bcrypt.hash(password, salt);
 
-    // 3. Insert into DB
     const newUser = await pool.query(
       "INSERT INTO users (username, email, password_hash) VALUES ($1, $2, $3) RETURNING *",
       [username, email, bcryptPassword]
     );
 
-    // 4. Generate Token
     const token = jwt.sign({ user_id: newUser.rows[0].id }, "secret_key_123", { expiresIn: "1h" });
-
-    res.json({ token, user: newUser.rows[0] });
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).send("Server Error: " + err.message);
-  }
-});
-
-// LOGIN
-app.post('/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    // 1. Find user
-    const user = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
-    if (user.rows.length === 0) {
-      return res.status(401).json({ error: "Password or Email is incorrect" });
-    }
-
-    // 2. Check Password
-    const validPassword = await bcrypt.compare(password, user.rows[0].password_hash);
-    if (!validPassword) {
-      return res.status(401).json({ error: "Password or Email is incorrect" });
-    }
-
-    // 3. Generate Token
-    const token = jwt.sign({ user_id: user.rows[0].id }, "secret_key_123", { expiresIn: "1h" });
-
-    res.json({ token, user: user.rows[0] });
+    res.json({ token });
   } catch (err) {
     console.error(err.message);
     res.status(500).send("Server Error");
   }
 });
 
-// --- 3. TASK ROUTES ---
+app.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
+    if (user.rows.length === 0) return res.status(401).json({ error: "Invalid Creds" });
 
-// GET ALL TASKS
-app.get("/tasks", async (req, res) => {
+    const validPassword = await bcrypt.compare(password, user.rows[0].password_hash);
+    if (!validPassword) return res.status(401).json({ error: "Invalid Creds" });
+
+    const token = jwt.sign({ user_id: user.rows[0].id }, "secret_key_123", { expiresIn: "1h" });
+    res.json({ token });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send("Server Error");
+  }
+});
+
+// --- PROTECTED TASK ROUTES (Note the 'authorize' middleware!) ---
+
+// GET MY TASKS
+app.get("/tasks", authorize, async (req, res) => {
     try {
-        const allTasks = await pool.query("SELECT * FROM tasks ORDER BY position ASC");
+        // Only get tasks for THIS user
+        const allTasks = await pool.query(
+            "SELECT * FROM tasks WHERE user_id = $1 ORDER BY position ASC", 
+            [req.user.user_id]
+        );
         res.json(allTasks.rows);
     } catch (err) {
         console.error(err.message);
@@ -99,16 +82,18 @@ app.get("/tasks", async (req, res) => {
     }
 });
 
-// ADD A TASK
-app.post("/tasks", async (req, res) => {
+// ADD TASK (With User ID)
+app.post("/tasks", authorize, async (req, res) => {
     try {
         const { title, status, priority } = req.body;
+        // Insert with user_id
         const newTask = await pool.query(
-            "INSERT INTO tasks (title, status, priority, position) VALUES($1, $2, $3, $4) RETURNING *",
-            [title, status, priority, 0]
+            "INSERT INTO tasks (title, status, priority, position, user_id) VALUES($1, $2, $3, $4, $5) RETURNING *",
+            [title, status, priority, 0, req.user.user_id]
         );
         
-        io.emit("tasksUpdated", (await pool.query("SELECT * FROM tasks ORDER BY position ASC")).rows);
+        // Only notify THIS user via socket room (Simple version: just emit to all for now, but frontend filters)
+        io.emit("tasksUpdated", newTask.rows[0]); 
         
         res.json(newTask.rows[0]);
     } catch (err) {
@@ -117,34 +102,17 @@ app.post("/tasks", async (req, res) => {
     }
 });
 
-// UPDATE TASK
-app.put("/tasks/:id", async (req, res) => {
+// DELETE TASK (Only if I own it)
+app.delete("/tasks/:id", authorize, async (req, res) => {
     try {
         const { id } = req.params;
-        const { status, position } = req.body;
-
-        await pool.query(
-            "UPDATE tasks SET status = $1, position = $2 WHERE id = $3",
-            [status, position, id]
-        );
-
-        io.emit("tasksUpdated", (await pool.query("SELECT * FROM tasks ORDER BY position ASC")).rows);
-
-        res.json("Task updated!");
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send("Server Error");
-    }
-});
-// DELETE TASK
-app.delete("/tasks/:id", async (req, res) => {
-    try {
-        const { id } = req.params;
-        await pool.query("DELETE FROM tasks WHERE id = $1", [id]);
+        const deleteOp = await pool.query("DELETE FROM tasks WHERE id = $1 AND user_id = $2 RETURNING *", [id, req.user.user_id]);
         
-        // Notify everyone to update their board
-        io.emit("tasksUpdated", (await pool.query("SELECT * FROM tasks ORDER BY position ASC")).rows);
-        
+        if(deleteOp.rows.length === 0) {
+            return res.json("This task is not yours!");
+        }
+
+        io.emit("taskDeleted", id);
         res.json("Task deleted!");
     } catch (err) {
         console.error(err.message);
@@ -152,7 +120,24 @@ app.delete("/tasks/:id", async (req, res) => {
     }
 });
 
-// --- 4. START SERVER ---
+// UPDATE TASK
+app.put("/tasks/:id", authorize, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status, position } = req.body;
+
+        await pool.query(
+            "UPDATE tasks SET status = $1, position = $2 WHERE id = $3 AND user_id = $4",
+            [status, position, id, req.user.user_id]
+        );
+
+        res.json("Task updated!");
+    } catch (err) {
+        console.error(err.message);
+        res.status(500).send("Server Error");
+    }
+});
+
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT} 🚀`);
