@@ -1,170 +1,84 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const cors = require('cors');
-const pool = require('./db');
-const authRoutes = require('./routes/auth');
+const express = require("express");
+const http = require("http");
+const { Server } = require("socket.io");
+const cors = require("cors");
+const pool = require("./db"); // Make sure you have db.js connected to Render
+
 const app = express();
 const server = http.createServer(app);
-const authorize = require('./middleware/authorize');
 
-
-// ... your other imports ...
-
-const io = new Server(server, {
-  cors: {
-    // allow your Vercel frontend
-    origin: ["http://localhost:3000", "https://taskflow-pro-sable.vercel.app"],
-    methods: ["GET", "POST"],
-    credentials: true
-  }
-});
-
+// --- 1. CONFIGURATION ---
 app.use(cors({
     origin: ["http://localhost:3000", "https://taskflow-pro-sable.vercel.app"],
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true
 }));
 app.use(express.json());
-// Auth Middleware
-app.use('/auth', authRoutes);
-// --- API ROUTES ---
 
-// 1. GET ALL TASKS
-app.get('/api/tasks', async (req, res) => {
-    try {
-        const result = await pool.query('SELECT * FROM tasks WHERE assignee_id = $1 ORDER BY id ASC', [req.user ]);
-        res.json(result.rows);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
+const io = new Server(server, {
+    cors: {
+        origin: ["http://localhost:3000", "https://taskflow-pro-sable.vercel.app"],
+        methods: ["GET", "POST"],
+        credentials: true
     }
 });
 
-// 2. CREATE A TASK
-app.post('/api/tasks', authorize, async (req, res) => { // Added 'authorize'
-    const { title, description, status, priority } = req.body;
+// --- 2. API ROUTES ---
+
+// GET ALL TASKS
+app.get("/tasks", async (req, res) => {
     try {
-        const result = await pool.query(
-            'INSERT INTO tasks (title, description, status, priority, assignee_id) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-            [title, description, status, priority, req.user] // Uses req.user from token!
-        );
-        io.emit("task_updated", { type: "CREATE", task: result.rows[0] }); // Notify frontend
-        res.json(result.rows[0]);
+        const allTasks = await pool.query("SELECT * FROM tasks ORDER BY position ASC");
+        res.json(allTasks.rows);
     } catch (err) {
         console.error(err.message);
-        res.status(500).send('Server Error');
+        res.status(500).send("Server Error");
     }
 });
-// 3. UPDATE TASK STATUS (Drag & Drop)
-app.put('/api/tasks/:id', async (req, res) => {
-    const { id } = req.params;
-    const { status } = req.body;
+
+// ADD A TASK
+app.post("/tasks", async (req, res) => {
     try {
-        const update = await pool.query(
-            'UPDATE tasks SET status = $1 WHERE id = $2 RETURNING *',
-            [status, id]
+        const { title, status, priority } = req.body;
+        // Default to bottom of list (position 0 or max+1)
+        const newTask = await pool.query(
+            "INSERT INTO tasks (title, status, priority, position) VALUES($1, $2, $3, $4) RETURNING *",
+            [title, status, priority, 0]
         );
         
-        io.emit("task_updated", { type: "UPDATE", task: update.rows[0] }); // Notify everyone
-        res.json(update.rows[0]);
+        // Notify everyone
+        io.emit("tasksUpdated", (await pool.query("SELECT * FROM tasks ORDER BY position ASC")).rows);
+        
+        res.json(newTask.rows[0]);
     } catch (err) {
         console.error(err.message);
-        res.status(500).send('Server Error');
+        res.status(500).send("Server Error");
     }
 });
-// 4. MOCK AI SUMMARY (Free Version)
-app.post('/api/ai-summary', async (req, res) => {
+
+// UPDATE TASK (DRAG & DROP)
+app.put("/tasks/:id", async (req, res) => {
     try {
-        // 1. Fetch actual tasks so the summary feels real
-        const result = await pool.query('SELECT * FROM tasks');
-        const tasks = result.rows;
+        const { id } = req.params;
+        const { status, position } = req.body;
 
-        const todoCount = tasks.filter(t => t.status === 'TODO').length;
-        const doneCount = tasks.filter(t => t.status === 'DONE').length;
-
-        // 2. Generate a "Fake" AI Response based on real data
-        const mockSummary = `
-        🤖 **AI Weekly Report:**
-        
-        Great job! You have completed **${doneCount}** tasks so far.
-        However, you still have **${todoCount}** tasks in your To-Do list.
-        
-        **Recommendation:** Focus on clearing your high-priority items before the weekend!
-        `;
-
-        // 3. Send it back to frontend with a slight delay (to simulate AI thinking)
-        setTimeout(() => {
-            res.json({ summary: mockSummary });
-        }, 1500); // 1.5 second delay
-
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).send('Server Error');
-    }
-});
-// 3. UPDATE TASK STATUS (Drag & Drop Route)
-app.put('/api/tasks/:id', async (req, res) => {
-    const { id } = req.params;
-    const { status } = req.body;
-    try {
-        const result = await pool.query(
-            'UPDATE tasks SET status = $1 WHERE id = $2 RETURNING *',
-            [status, id]
+        await pool.query(
+            "UPDATE tasks SET status = $1, position = $2 WHERE id = $3",
+            [status, position, id]
         );
-        
-        // Notify frontend that task has moved
-        io.emit("task_updated", { type: "UPDATE", task: result.rows[0] });
-        
-        res.json(result.rows[0]);
+
+        // Notify everyone
+        io.emit("tasksUpdated", (await pool.query("SELECT * FROM tasks ORDER BY position ASC")).rows);
+
+        res.json("Task updated!");
     } catch (err) {
         console.error(err.message);
-        res.status(500).send('Server Error');
+        res.status(500).send("Server Error");
     }
 });
-// --- TEMPORARY SETUP ROUTE (DELETE AFTER RUNNING) ---
-// --- COMPLETE DATABASE SETUP (Includes Priority & Assignee) ---
-app.get('/setup-db', async (req, res) => {
-  try {
-    const pool = require('./db');
-    
-    // 1. Reset Tables (Deletes old data to start fresh)
-    await pool.query('DROP TABLE IF EXISTS tasks');
-    await pool.query('DROP TABLE IF EXISTS users');
 
-    // 2. Create Users
-    await pool.query(`
-      CREATE TABLE users (
-        id SERIAL PRIMARY KEY,
-        username VARCHAR(255) NOT NULL,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        password_hash VARCHAR(255) NOT NULL
-      );
-    `);
-
-    // 3. Create Tasks (WITH ALL REQUIRED COLUMNS)
-    await pool.query(`
-      CREATE TABLE tasks (
-        id SERIAL PRIMARY KEY,
-        title VARCHAR(255) NOT NULL,
-        description TEXT,
-        status VARCHAR(50) DEFAULT 'todo',
-        priority VARCHAR(50) DEFAULT 'medium',  
-        position INTEGER DEFAULT 0,
-        assignee_id INTEGER,                   
-        user_id INTEGER REFERENCES users(id)
-      );
-    `);
-
-    res.send("Database Upgraded! Added 'priority' and 'assignee_id'. 🚀");
-  } catch (err) {
-    console.error(err);
-    res.status(500).send("Error setup: " + err.message);
-  }
-});
-// ----------------------------------------------------
-// 3. START SERVER
-const PORT = process.env.PORT || 5000;
+// --- 3. START SERVER ---
+const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`Server running on port ${PORT} 🚀`);
 });
