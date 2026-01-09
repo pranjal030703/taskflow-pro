@@ -11,7 +11,7 @@ const app = express();
 const server = http.createServer(app);
 
 app.use(cors({
-    origin: ["http://localhost:3000", "https://taskflow-pro-sable.vercel.app"],
+    origin: ["http://localhost:3000", "https://taskflow-pro-sable.vercel.app","https://taskflow-pro-pranjal.vercel.app"],
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true
 }));
@@ -19,7 +19,7 @@ app.use(express.json());
 
 const io = new Server(server, {
     cors: {
-        origin: ["http://localhost:3000", "https://taskflow-pro-sable.vercel.app"],
+        origin: ["http://localhost:3000", "https://taskflow-pro-sable.vercel.app", "https://taskflow-pro-pranjal.vercel.app"],
         methods: ["GET", "POST"],
         credentials: true
     }
