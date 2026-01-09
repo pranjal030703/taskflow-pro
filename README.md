@@ -46,8 +46,6 @@ cd ../server && npm install
 ```
 3. **Setup Environment Variables** Create a .env file in the server folder:
 
-Code snippet
-
 DATABASE_URL=your_postgres_url_here
 
 4. **Run the App**
